@@ -1,79 +1,69 @@
-import os
-from telegram.ext import CommandHandler, MessageHandler, Filters
-
-from settings import WELCOME_MESSAGE, TELEGRAM_SUPPORT_CHAT_ID, REPLY_TO_THIS_MESSAGE, WRONG_REPLY
-
-
-def start(update, context):
-    update.message.reply_text(WELCOME_MESSAGE)
-
-    user_info = update.message.from_user.to_dict()
-
-    context.bot.send_message(
-        chat_id=TELEGRAM_SUPPORT_CHAT_ID,
-        text=f"""
-📞 Connected {user_info}.
-        """,
-    )
+import sys
+from os.path import basename
+from PySide6.QtWidgets import (QApplication, QPushButton, QLabel, 
+					QVBoxLayout, QFileDialog, QDialog, QSlider)
+from PySide6.QtCore import Qt
+from pygame import mixer
 
 
-def forward_to_chat(update, context):
-    """{ 
-        'message_id': 5, 
-        'date': 1605106546, 
-        'chat': {'id': 49820636, 'type': 'private', 'username': 'danokhlopkov', 'first_name': 'Daniil', 'last_name': 'Okhlopkov'}, 
-        'text': 'TEST QOO', 'entities': [], 'caption_entities': [], 'photo': [], 'new_chat_members': [], 'new_chat_photo': [], 'delete_chat_photo': False, 'group_chat_created': False, 'supergroup_chat_created': False, 'channel_chat_created': False, 
-        'from': {'id': 49820636, 'first_name': 'Daniil', 'is_bot': False, 'last_name': 'Okhlopkov', 'username': 'danokhlopkov', 'language_code': 'en'}
-    }"""
-    forwarded = update.message.forward(chat_id=TELEGRAM_SUPPORT_CHAT_ID)
-    if not forwarded.forward_from:
-        context.bot.send_message(
-            chat_id=TELEGRAM_SUPPORT_CHAT_ID,
-            reply_to_message_id=forwarded.message_id,
-            text=f'{update.message.from_user.id}\n{REPLY_TO_THIS_MESSAGE}'
-        )
+class Form(QDialog):
+	def __init__(self, parent=None):
+		super(Form, self).__init__(parent)
+		mixer.init()
+		mixer.music.set_volume(0.1)
 
+		self.b_file = QPushButton('file')
+		self.b_play = QPushButton('play')
+		self.b_pause = QPushButton('pause')
 
-def forward_to_user(update, context):
-    """{
-        'message_id': 10, 'date': 1605106662, 
-        'chat': {'id': -484179205, 'type': 'group', 'title': '☎️ SUPPORT CHAT', 'all_members_are_administrators': True}, 
-        'reply_to_message': {
-            'message_id': 9, 'date': 1605106659, 
-            'chat': {'id': -484179205, 'type': 'group', 'title': '☎️ SUPPORT CHAT', 'all_members_are_administrators': True}, 
-            'forward_from': {'id': 49820636, 'first_name': 'Daniil', 'is_bot': False, 'last_name': 'Okhlopkov', 'danokhlopkov': 'okhlopkov', 'language_code': 'en'}, 
-            'forward_date': 1605106658, 
-            'text': 'g', 'entities': [], 'caption_entities': [], 'photo': [], 'new_chat_members': [], 'new_chat_photo': [], 
-            'delete_chat_photo': False, 'group_chat_created': False, 'supergroup_chat_created': False, 'channel_chat_created': False, 
-            'from': {'id': 1440913096, 'first_name': 'SUPPORT', 'is_bot': True, 'username': 'lolkek'}
-        }, 
-        'text': 'ggg', 'entities': [], 'caption_entities': [], 'photo': [], 'new_chat_members': [], 'new_chat_photo': [], 'delete_chat_photo': False, 
-        'group_chat_created': False, 'supergroup_chat_created': False, 'channel_chat_created': False, 
-        'from': {'id': 49820636, 'first_name': 'Daniil', 'is_bot': False, 'last_name': 'Okhlopkov', 'username': 'danokhlopkov', 'language_code': 'en'}
-    }"""
-    user_id = None
-    if update.message.reply_to_message.forward_from:
-        user_id = update.message.reply_to_message.forward_from.id
-    elif REPLY_TO_THIS_MESSAGE in update.message.reply_to_message.text:
-        try:
-            user_id = int(update.message.reply_to_message.text.split('\n')[0])
-        except ValueError:
-            user_id = None
-    if user_id:
-        context.bot.copy_message(
-            message_id=update.message.message_id,
-            chat_id=user_id,
-            from_chat_id=update.message.chat_id
-        )
-    else:
-        context.bot.send_message(
-            chat_id=TELEGRAM_SUPPORT_CHAT_ID,
-            text=WRONG_REPLY
-        )
+		self.vol = QLabel('Volume')
+		self.vol.setAlignment(Qt.AlignCenter)
+		self.slider = QSlider(orientation=Qt.Horizontal)
+		self.slider.setRange(1, 100)
+		self.slider.setSliderPosition(10)
 
+		self.cur_pl = 'Currently playing: \n'
+		self.name_tr = QLabel(self.cur_pl)
+		self.name_tr.setAlignment(Qt.AlignCenter)
+		self.b_ext = QPushButton('quit')
 
-def setup_dispatcher(dp):
-    dp.add_handler(CommandHandler('start', start))
-    dp.add_handler(MessageHandler(Filters.chat_type.private, forward_to_chat))
-    dp.add_handler(MessageHandler(Filters.chat(TELEGRAM_SUPPORT_CHAT_ID) & Filters.reply, forward_to_user))
-    return dp
+		self.b_file.clicked.connect(self.open)
+		self.b_pause.clicked.connect(mixer.music.pause)
+		self.b_play.clicked.connect(mixer.music.unpause)
+		self.slider.actionTriggered.connect(self.slide_vl)
+		self.b_ext.clicked.connect(exit)
+
+		layout = QVBoxLayout()
+		layout.addWidget(self.b_file)
+		layout.addWidget(self.b_play)
+		layout.addWidget(self.b_pause)
+		layout.addWidget(self.vol)
+		layout.addWidget(self.slider)
+
+		layout.addWidget(self.name_tr)
+		layout.addWidget(self.b_ext)
+		self.setLayout(layout)
+
+	def open(self):
+		path = QFileDialog.getOpenFileName(self, 'Open a file', '', 'All Files (*.*)')
+		if path != ('', ''):
+			self.name_tr.setText(self.cur_pl + basename(path[0]))
+			mixer.music.load(path[0])
+			mixer.music.play()
+
+	def vlme(self):
+		a = mixer.music.get_volume()
+		print(a)
+
+	def slide_vl(self):
+		a = self.slider.value()
+		if a == 1: a = 0
+		mixer.music.set_volume(a / 100)
+		print(a, mixer.music.get_volume())
+
+app = QApplication(sys.argv)
+
+form = Form()
+form.setWindowTitle('ThewrstAudioPlayer')
+form.show()
+app.exec()
